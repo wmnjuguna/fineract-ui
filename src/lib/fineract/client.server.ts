@@ -16,7 +16,7 @@ const FINERACT_PASSWORD = process.env.FINERACT_PASSWORD || "password";
 interface FineractRequestOptions {
 	method?: string;
 	body?: unknown;
-	tenantId?: string; // Made optional - will use session tenantId if not provided
+	tenantId?: string; // Fallback only - the session tenantId takes precedence for authenticated requests
 	headers?: Record<string, string>;
 	useBasicAuth?: boolean; // Optional flag to use basic auth instead of bearer token
 }
@@ -45,10 +45,12 @@ async function resolveRequestContext(
 
 		if (session?.provider === "keycloak" && session?.accessToken) {
 			authHeader = `Bearer ${session.accessToken}`;
-			tenantId = tenantId || session.tenantId || "default";
+			// Session tenant is authoritative; the caller-provided value (usually the
+			// client-sent x-tenant-id header) is only a fallback and must not override it.
+			tenantId = session.tenantId || tenantId || "default";
 		} else if (session?.provider === "credentials" && session?.credentials) {
 			authHeader = `Basic ${session.credentials}`;
-			tenantId = tenantId || session.tenantId || "default";
+			tenantId = session.tenantId || tenantId || "default";
 		} else {
 			console.warn(
 				"No session found or unknown provider, using service-level auth",
@@ -80,7 +82,13 @@ function buildRequestInit(
 		...headers,
 	};
 
-	if (body && (method === "POST" || method === "PUT" || method === "PATCH")) {
+	const hasMutationBody =
+		body && (method === "POST" || method === "PUT" || method === "PATCH");
+	// FormData bodies must be passed through untouched and without an explicit
+	// Content-Type so fetch can set the multipart boundary itself.
+	const isFormData = body instanceof FormData;
+
+	if (hasMutationBody && !isFormData) {
 		requestHeaders["Content-Type"] =
 			requestHeaders["Content-Type"] || "application/json";
 	}
@@ -91,8 +99,8 @@ function buildRequestInit(
 		cache: "no-store",
 	};
 
-	if (body && (method === "POST" || method === "PUT" || method === "PATCH")) {
-		requestInit.body = JSON.stringify(body);
+	if (hasMutationBody) {
+		requestInit.body = isFormData ? body : JSON.stringify(body);
 	}
 
 	return requestInit;
@@ -156,18 +164,16 @@ export async function fineractFetch<T = unknown>(
 }
 
 /**
- * Validates tenant ID header from request
+ * Reads the tenant ID header from a request, if present.
+ * Only used as a fallback when the session has no tenant — the session
+ * tenant is authoritative for authenticated requests.
  */
-export function getTenantFromRequest(request: Request): string {
+export function getTenantFromRequest(request: Request): string | undefined {
 	// Check for tenant ID in different header formats
 	const tenantId =
 		request.headers.get("x-tenant-id") ||
 		request.headers.get("fineract-platform-tenantid") ||
 		request.headers.get("X-Tenant-Id");
 
-	if (!tenantId) {
-		throw new Error("Missing tenant ID header");
-	}
-
-	return tenantId;
+	return tenantId ?? undefined;
 }

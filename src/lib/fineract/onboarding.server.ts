@@ -13,7 +13,7 @@ import type {
 export type OnboardStaffAndUserInput = {
 	staff: StaffRequest;
 	user: PostUsersRequest;
-	tenantId: string;
+	tenantId?: string;
 };
 
 export type OnboardStaffAndUserResult = {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { invalidRequestResponse } from "@/lib/fineract/api-error-response";
-import { getTenantFromRequest } from "@/lib/fineract/client.server";
+import {
+	fineractFetchResponse,
+	getTenantFromRequest,
+} from "@/lib/fineract/client.server";
 import { FINERACT_ENDPOINTS } from "@/lib/fineract/endpoints";
 import { normalizeApiError } from "@/lib/fineract/ui-api-error";
 
@@ -22,25 +25,11 @@ export async function GET(
 			return invalidRequestResponse("Invalid loan ID or document ID");
 		}
 
-		const FINERACT_BASE_URL =
-			process.env.FINERACT_BASE_URL ||
-			"https://demo.fineract.dev/fineract-provider/api";
-		const FINERACT_USERNAME = process.env.FINERACT_USERNAME || "mifos";
-		const FINERACT_PASSWORD = process.env.FINERACT_PASSWORD || "password";
-
-		const basicAuth = Buffer.from(
-			`${FINERACT_USERNAME}:${FINERACT_PASSWORD}`,
-		).toString("base64");
-
 		const path = `${FINERACT_ENDPOINTS.loanDocuments(loanIdNum)}/${documentIdNum}/attachment`;
-		const url = `${FINERACT_BASE_URL}${path}`;
 
-		const response = await fetch(url, {
+		const response = await fineractFetchResponse(path, {
 			method: "GET",
-			headers: {
-				Authorization: `Basic ${basicAuth}`,
-				"fineract-platform-tenantid": tenantId,
-			},
+			tenantId,
 		});
 
 		if (!response.ok) {
