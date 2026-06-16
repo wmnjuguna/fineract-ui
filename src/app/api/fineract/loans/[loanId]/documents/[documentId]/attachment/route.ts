@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { invalidRequestResponse } from "@/lib/fineract/api-error-response";
-import { getTenantFromRequest } from "@/lib/fineract/client.server";
+import {
+	getTenantFromRequest,
+	resolveFineractRequestContext,
+} from "@/lib/fineract/client.server";
 import { FINERACT_ENDPOINTS } from "@/lib/fineract/endpoints";
 import { normalizeApiError } from "@/lib/fineract/ui-api-error";
 
@@ -13,7 +16,10 @@ export async function GET(
 	{ params }: { params: Promise<{ loanId: string; documentId: string }> },
 ) {
 	try {
-		const tenantId = getTenantFromRequest(request);
+		const requestedTenantId = getTenantFromRequest(request);
+		const { authHeader, tenantId } = await resolveFineractRequestContext({
+			tenantId: requestedTenantId,
+		});
 		const { loanId, documentId } = await params;
 		const loanIdNum = parseInt(loanId, 10);
 		const documentIdNum = parseInt(documentId, 10);
@@ -25,20 +31,13 @@ export async function GET(
 		const FINERACT_BASE_URL =
 			process.env.FINERACT_BASE_URL ||
 			"https://demo.fineract.dev/fineract-provider/api";
-		const FINERACT_USERNAME = process.env.FINERACT_USERNAME || "mifos";
-		const FINERACT_PASSWORD = process.env.FINERACT_PASSWORD || "password";
-
-		const basicAuth = Buffer.from(
-			`${FINERACT_USERNAME}:${FINERACT_PASSWORD}`,
-		).toString("base64");
-
 		const path = `${FINERACT_ENDPOINTS.loanDocuments(loanIdNum)}/${documentIdNum}/attachment`;
 		const url = `${FINERACT_BASE_URL}${path}`;
 
 		const response = await fetch(url, {
 			method: "GET",
 			headers: {
-				Authorization: `Basic ${basicAuth}`,
+				Authorization: authHeader,
 				"fineract-platform-tenantid": tenantId,
 			},
 		});

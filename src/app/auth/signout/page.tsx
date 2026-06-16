@@ -1,5 +1,7 @@
 import { X } from "lucide-react";
-import { signOut } from "@/auth";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth, signOut } from "@/auth";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -8,6 +10,11 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import {
+	buildKeycloakLogoutUrl,
+	clearKeycloakTenantHintCookie,
+	getRequestOrigin,
+} from "@/lib/auth/keycloak";
 
 export default function SignOutPage() {
 	return (
@@ -21,7 +28,25 @@ export default function SignOutPage() {
 					<form
 						action={async () => {
 							"use server";
-							await signOut({ redirectTo: "/" });
+							const session = await auth();
+							const postLogoutRedirectUri = await getRequestOrigin();
+
+							await clearKeycloakTenantHintCookie();
+							await signOut({ redirect: false, redirectTo: "/" });
+
+							if (session?.provider === "keycloak") {
+								const keycloakLogoutUrl = buildKeycloakLogoutUrl({
+									idToken: session.idToken,
+									issuer: session.issuer,
+									postLogoutRedirectUri,
+								});
+
+								if (keycloakLogoutUrl) {
+									redirect(keycloakLogoutUrl);
+								}
+							}
+
+							redirect("/");
 						}}
 						className="space-y-4"
 					>
@@ -34,10 +59,10 @@ export default function SignOutPage() {
 							Sign out
 						</Button>
 						<Button type="button" variant="outline" className="w-full" asChild>
-							<a href="/config">
+							<Link href="/config">
 								<X className="w-4 h-4 mr-2" />
 								Cancel
-							</a>
+							</Link>
 						</Button>
 					</form>
 				</CardContent>

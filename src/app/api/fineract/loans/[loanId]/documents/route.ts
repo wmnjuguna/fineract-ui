@@ -3,6 +3,7 @@ import { invalidRequestResponse } from "@/lib/fineract/api-error-response";
 import {
 	fineractFetch,
 	getTenantFromRequest,
+	resolveFineractRequestContext,
 } from "@/lib/fineract/client.server";
 import { FINERACT_ENDPOINTS } from "@/lib/fineract/endpoints";
 import { normalizeApiError } from "@/lib/fineract/ui-api-error";
@@ -48,7 +49,10 @@ export async function POST(
 	{ params }: { params: Promise<{ loanId: string }> },
 ) {
 	try {
-		const tenantId = getTenantFromRequest(request);
+		const requestedTenantId = getTenantFromRequest(request);
+		const { authHeader, tenantId } = await resolveFineractRequestContext({
+			tenantId: requestedTenantId,
+		});
 		const { loanId } = await params;
 		const loanIdNum = parseInt(loanId, 10);
 
@@ -85,17 +89,10 @@ export async function POST(
 		const path = FINERACT_ENDPOINTS.loanDocuments(loanIdNum);
 		const url = `${FINERACT_BASE_URL}${path}`;
 
-		// Get auth credentials from session or environment
-		const FINERACT_USERNAME = process.env.FINERACT_USERNAME || "mifos";
-		const FINERACT_PASSWORD = process.env.FINERACT_PASSWORD || "password";
-		const basicAuth = Buffer.from(
-			`${FINERACT_USERNAME}:${FINERACT_PASSWORD}`,
-		).toString("base64");
-
 		const response = await fetch(url, {
 			method: "POST",
 			headers: {
-				Authorization: `Basic ${basicAuth}`,
+				Authorization: authHeader,
 				"fineract-platform-tenantid": tenantId,
 			},
 			body: fineractFormData,

@@ -1,4 +1,5 @@
 import "server-only";
+import { getDefaultTenantId, normalizeTenantId } from "@/lib/auth/keycloak";
 import { getSession } from "@/lib/auth/session";
 import { normalizeApiError } from "@/lib/fineract/ui-api-error";
 
@@ -26,45 +27,74 @@ type ResolvedRequestContext = {
 	tenantId: string;
 };
 
-async function resolveRequestContext(
+function getServiceBasicAuthHeader(): string {
+	const basicAuth = Buffer.from(
+		`${FINERACT_USERNAME}:${FINERACT_PASSWORD}`,
+	).toString("base64");
+	return `Basic ${basicAuth}`;
+}
+
+function authenticationRequiredError(message = "Authentication is required") {
+	return normalizeApiError({
+		status: 401,
+		data: {
+			code: "UNAUTHORIZED",
+			message,
+		},
+	});
+}
+
+function invalidTenantError() {
+	return normalizeApiError({
+		status: 400,
+		data: {
+			code: "INVALID_TENANT",
+			message: "Invalid tenant ID",
+		},
+	});
+}
+
+export async function resolveFineractRequestContext(
 	options: FineractRequestOptions,
 ): Promise<ResolvedRequestContext> {
 	const { tenantId: providedTenantId, useBasicAuth = false } = options;
+	const session = await getSession();
 
-	let authHeader: string;
-	let tenantId = providedTenantId;
-
-	if (useBasicAuth) {
-		const basicAuth = Buffer.from(
-			`${FINERACT_USERNAME}:${FINERACT_PASSWORD}`,
-		).toString("base64");
-		authHeader = `Basic ${basicAuth}`;
-		tenantId = tenantId || "default";
-	} else {
-		const session = await getSession();
-
-		if (session?.provider === "keycloak" && session?.accessToken) {
-			authHeader = `Bearer ${session.accessToken}`;
-			tenantId = tenantId || session.tenantId || "default";
-		} else if (session?.provider === "credentials" && session?.credentials) {
-			authHeader = `Basic ${session.credentials}`;
-			tenantId = tenantId || session.tenantId || "default";
-		} else {
-			console.warn(
-				"No session found or unknown provider, using service-level auth",
-			);
-			const basicAuth = Buffer.from(
-				`${FINERACT_USERNAME}:${FINERACT_PASSWORD}`,
-			).toString("base64");
-			authHeader = `Basic ${basicAuth}`;
-			tenantId = tenantId || "default";
-		}
+	if (!session?.user) {
+		throw authenticationRequiredError();
 	}
 
-	return {
-		authHeader,
-		tenantId: tenantId || "default",
-	};
+	const tenantId =
+		normalizeTenantId(session.tenantId) ??
+		normalizeTenantId(providedTenantId) ??
+		getDefaultTenantId();
+
+	if (session.authError) {
+		throw authenticationRequiredError("Session authentication has expired");
+	}
+
+	if (useBasicAuth) {
+		return {
+			authHeader: getServiceBasicAuthHeader(),
+			tenantId,
+		};
+	}
+
+	if (session.provider === "keycloak" && session.accessToken) {
+		return {
+			authHeader: `Bearer ${session.accessToken}`,
+			tenantId,
+		};
+	}
+
+	if (session.provider === "credentials" && session.credentials) {
+		return {
+			authHeader: `Basic ${session.credentials}`,
+			tenantId,
+		};
+	}
+
+	throw authenticationRequiredError();
 }
 
 function buildRequestInit(
@@ -103,7 +133,7 @@ export async function fineractFetchResponse(
 	options: FineractRequestOptions,
 ): Promise<Response> {
 	const { method = "GET", body, headers = {} } = options;
-	const { authHeader, tenantId } = await resolveRequestContext(options);
+	const { authHeader, tenantId } = await resolveFineractRequestContext(options);
 	const requestInit = buildRequestInit(
 		method,
 		authHeader,
@@ -120,7 +150,7 @@ export async function fineractFetchResponse(
  * Automatically detects authentication method based on session:
  * - For Keycloak provider: Uses Bearer token
  * - For Credentials provider: Uses Basic auth with user's credentials
- * - Fallback: Uses service-level basic auth from environment variables
+ * - Explicit useBasicAuth calls require an authenticated session first
  */
 export async function fineractFetch<T = unknown>(
 	path: string,
@@ -166,8 +196,13 @@ export function getTenantFromRequest(request: Request): string {
 		request.headers.get("X-Tenant-Id");
 
 	if (!tenantId) {
-		throw new Error("Missing tenant ID header");
+		return getDefaultTenantId();
 	}
 
-	return tenantId;
+	const normalizedTenantId = normalizeTenantId(tenantId);
+	if (!normalizedTenantId) {
+		throw invalidTenantError();
+	}
+
+	return normalizedTenantId;
 }
