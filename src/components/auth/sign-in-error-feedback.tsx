@@ -21,6 +21,15 @@ const AUTH_ERROR_MESSAGES: Record<
 		title: "Access denied",
 		description: "You do not have permission to sign in.",
 	},
+	InvalidTenant: {
+		title: "Invalid tenant ID",
+		description:
+			"Use a tenant ID with letters, numbers, dots, underscores, or hyphens.",
+	},
+	KeycloakUnavailable: {
+		title: "Keycloak sign-in unavailable",
+		description: "Keycloak sign-in is not configured for this environment.",
+	},
 	Default: {
 		title: "Authentication failed",
 		description: "We couldn't sign you in. Please try again.",

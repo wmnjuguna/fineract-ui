@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import type { Session } from "next-auth";
 import { SessionProvider, useSession } from "next-auth/react";
 import { useEffect, useRef } from "react";
+import { useTenantStore } from "@/store/tenant";
 
 interface AuthProviderProps {
 	children: React.ReactNode;
@@ -12,7 +13,8 @@ interface AuthProviderProps {
 
 function SessionSync() {
 	const pathname = usePathname();
-	const { update } = useSession();
+	const { data: session, update } = useSession();
+	const setTenantId = useTenantStore((state) => state.setTenantId);
 	const lastSyncedPath = useRef<string | null>(null);
 
 	useEffect(() => {
@@ -23,6 +25,14 @@ function SessionSync() {
 		lastSyncedPath.current = pathname;
 		void update();
 	}, [pathname, update]);
+
+	useEffect(() => {
+		if (!session?.tenantId) {
+			return;
+		}
+
+		setTenantId(session.tenantId);
+	}, [session?.tenantId, setTenantId]);
 
 	return null;
 }

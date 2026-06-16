@@ -1,34 +1,9 @@
-import { NextResponse } from "next/server";
+import type { NextFetchEvent, NextRequest } from "next/server";
 import { auth } from "@/auth";
 
-export default auth((req) => {
-	const isLoggedIn = !!req.auth;
-	const isOnAdminPage = req.nextUrl.pathname.startsWith("/config");
-	const isOnLoginPage = req.nextUrl.pathname.startsWith("/auth/signin");
-	const isOnAuthCallback = req.nextUrl.pathname.startsWith("/api/auth");
-
-	// Allow auth callbacks to proceed
-	if (isOnAuthCallback) {
-		return NextResponse.next();
-	}
-
-	// Redirect unauthenticated users trying to access admin pages
-	if (isOnAdminPage && !isLoggedIn) {
-		const callbackUrl = encodeURIComponent(
-			req.nextUrl.pathname + req.nextUrl.search,
-		);
-		return NextResponse.redirect(
-			new URL(`/auth/signin?callbackUrl=${callbackUrl}`, req.url),
-		);
-	}
-
-	// Redirect authenticated users away from login page
-	if (isLoggedIn && isOnLoginPage) {
-		return NextResponse.redirect(new URL("/config", req.url));
-	}
-
-	return NextResponse.next();
-});
+export function proxy(request: NextRequest, event: NextFetchEvent) {
+	return auth(request, event);
+}
 
 export const config = {
 	matcher: [

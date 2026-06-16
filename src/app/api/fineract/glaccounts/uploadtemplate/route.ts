@@ -1,44 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSession } from "@/lib/auth/session";
 import { invalidRequestResponse } from "@/lib/fineract/api-error-response";
+import {
+	getTenantFromRequest,
+	resolveFineractRequestContext,
+} from "@/lib/fineract/client.server";
 import { FINERACT_ENDPOINTS } from "@/lib/fineract/endpoints";
 import { normalizeApiError } from "@/lib/fineract/ui-api-error";
 
 const FINERACT_BASE_URL =
 	process.env.FINERACT_BASE_URL ||
 	"https://demo.fineract.dev/fineract-provider/api";
-const FINERACT_USERNAME = process.env.FINERACT_USERNAME || "mifos";
-const FINERACT_PASSWORD = process.env.FINERACT_PASSWORD || "password";
-
-async function resolveAuthHeaders(request: NextRequest) {
-	const tenantId =
-		request.headers.get("x-tenant-id") ||
-		request.headers.get("fineract-platform-tenantid") ||
-		"default";
-
-	const session = await getSession();
-	if (session?.provider === "keycloak" && session?.accessToken) {
-		return {
-			authorization: `Bearer ${session.accessToken}`,
-			tenantId: tenantId || session.tenantId || "default",
-		};
-	}
-
-	if (session?.provider === "credentials" && session?.credentials) {
-		return {
-			authorization: `Basic ${session.credentials}`,
-			tenantId: tenantId || session.tenantId || "default",
-		};
-	}
-
-	const basicAuth = Buffer.from(
-		`${FINERACT_USERNAME}:${FINERACT_PASSWORD}`,
-	).toString("base64");
-	return {
-		authorization: `Basic ${basicAuth}`,
-		tenantId,
-	};
-}
 
 /**
  * POST /api/fineract/glaccounts/uploadtemplate
@@ -46,7 +17,10 @@ async function resolveAuthHeaders(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
 	try {
-		const { authorization, tenantId } = await resolveAuthHeaders(request);
+		const requestedTenantId = getTenantFromRequest(request);
+		const { authHeader, tenantId } = await resolveFineractRequestContext({
+			tenantId: requestedTenantId,
+		});
 		const formData = await request.formData();
 		const fileEntry =
 			formData.get("file") || formData.get("uploadedInputStream");
@@ -72,7 +46,7 @@ export async function POST(request: NextRequest) {
 			{
 				method: "POST",
 				headers: {
-					Authorization: authorization,
+					Authorization: authHeader,
 					"fineract-platform-tenantid": tenantId,
 				},
 				body: fineractFormData,

@@ -8,9 +8,11 @@ declare module "next-auth" {
 		refreshToken?: string;
 		expiresAt?: number;
 		provider?: string;
+		issuer?: string;
 		username?: string;
 		tenantId?: string;
 		credentials?: string;
+		authError?: string;
 		user: {
 			roles?: string[];
 		} & DefaultSession["user"];
@@ -32,8 +34,10 @@ declare module "next-auth/jwt" {
 		expiresAt?: number;
 		roles?: string[];
 		provider?: string;
+		issuer?: string;
 		username?: string;
 		tenantId?: string;
 		credentials?: string;
+		authError?: string;
 	}
 }

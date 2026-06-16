@@ -20,6 +20,13 @@ export function UserMenu() {
 	const displayName =
 		session?.user?.name || session?.username || session?.user?.email || "User";
 	const displayEmail = session?.user?.email || session?.username || "No email";
+	const providerLabel =
+		session?.provider === "keycloak"
+			? "Keycloak"
+			: session?.provider === "credentials"
+				? "Credentials"
+				: "Session";
+	const tenantLabel = session?.tenantId || "default";
 
 	if (status === "loading") {
 		return (
@@ -53,6 +60,9 @@ export function UserMenu() {
 					<div className="flex flex-col space-y-1">
 						<p className="text-sm font-medium">{displayName}</p>
 						<p className="text-xs text-muted-foreground">{displayEmail}</p>
+						<p className="text-xs text-muted-foreground">
+							{providerLabel} - Tenant {tenantLabel}
+						</p>
 					</div>
 				</DropdownMenuLabel>
 				<DropdownMenuSeparator />

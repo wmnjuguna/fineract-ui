@@ -13,9 +13,12 @@ services:
       FINERACT_BASE_URL: "https://your-fineract-domain.example/fineract-provider/api"
       FINERACT_USERNAME: "mifos"
       FINERACT_PASSWORD: "password"
-      AUTH_KEYCLOAK_ID: "your-keycloak-client-id"
-      AUTH_KEYCLOAK_SECRET: "your-keycloak-client-secret"
-      AUTH_KEYCLOAK_ISSUER: "https://your-keycloak-domain.example/realms/your-realm"
+      AUTH_LOGIN_MODE: "dual"
+      AUTH_KEYCLOAK_BASE_URL: "https://your-keycloak-domain.example"
+      AUTH_KEYCLOAK_ID: "fineract-ui"
+      AUTH_KEYCLOAK_DEFAULT_TENANT: "default"
+      # Optional for confidential clients; public PKCE clients can leave it blank.
+      AUTH_KEYCLOAK_SECRET: ""
     networks:
       - fincore
     labels:
