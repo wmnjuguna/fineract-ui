@@ -1,9 +1,4 @@
-import type { NextFetchEvent, NextRequest } from "next/server";
-import { auth } from "@/auth";
-
-export function proxy(request: NextRequest, event: NextFetchEvent) {
-	return auth(request, event);
-}
+export { auth as proxy } from "@/auth";
 
 export const config = {
 	matcher: [
