@@ -21,11 +21,7 @@ export function UserMenu() {
 		session?.user?.name || session?.username || session?.user?.email || "User";
 	const displayEmail = session?.user?.email || session?.username || "No email";
 	const providerLabel =
-		session?.provider === "keycloak"
-			? "Keycloak"
-			: session?.provider === "credentials"
-				? "Credentials"
-				: "Session";
+		session?.provider === "keycloak" ? "Keycloak SSO" : "OIDC session";
 	const tenantLabel = session?.tenantId || "default";
 
 	if (status === "loading") {

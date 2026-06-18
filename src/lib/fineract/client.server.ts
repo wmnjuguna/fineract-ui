@@ -1,5 +1,6 @@
 import "server-only";
 import { getDefaultTenantId, normalizeTenantId } from "@/lib/auth/keycloak";
+import { hasValidOidcSession } from "@/lib/auth/routes";
 import { getSession } from "@/lib/auth/session";
 import { normalizeApiError } from "@/lib/fineract/ui-api-error";
 
@@ -19,7 +20,7 @@ interface FineractRequestOptions {
 	body?: unknown;
 	tenantId?: string; // Made optional - will use session tenantId if not provided
 	headers?: Record<string, string>;
-	useBasicAuth?: boolean; // Optional flag to use basic auth instead of bearer token
+	useBasicAuth?: boolean; // Service-account Basic auth for endpoints that require it
 }
 
 type ResolvedRequestContext = {
@@ -73,6 +74,12 @@ export async function resolveFineractRequestContext(
 		throw authenticationRequiredError("Session authentication has expired");
 	}
 
+	if (!hasValidOidcSession(session)) {
+		throw authenticationRequiredError(
+			"Sign in with single sign-on before using Fineract",
+		);
+	}
+
 	if (useBasicAuth) {
 		return {
 			authHeader: getServiceBasicAuthHeader(),
@@ -80,21 +87,10 @@ export async function resolveFineractRequestContext(
 		};
 	}
 
-	if (session.provider === "keycloak" && session.accessToken) {
-		return {
-			authHeader: `Bearer ${session.accessToken}`,
-			tenantId,
-		};
-	}
-
-	if (session.provider === "credentials" && session.credentials) {
-		return {
-			authHeader: `Basic ${session.credentials}`,
-			tenantId,
-		};
-	}
-
-	throw authenticationRequiredError();
+	return {
+		authHeader: `Bearer ${session.accessToken}`,
+		tenantId,
+	};
 }
 
 function buildRequestInit(
@@ -147,10 +143,9 @@ export async function fineractFetchResponse(
 
 /**
  * Makes authenticated requests to Fineract API
- * Automatically detects authentication method based on session:
- * - For Keycloak provider: Uses Bearer token
- * - For Credentials provider: Uses Basic auth with user's credentials
- * - Explicit useBasicAuth calls require an authenticated session first
+ * Uses the signed-in Keycloak access token for user requests.
+ * Explicit useBasicAuth calls use service credentials but still require a valid
+ * Keycloak session first.
  */
 export async function fineractFetch<T = unknown>(
 	path: string,

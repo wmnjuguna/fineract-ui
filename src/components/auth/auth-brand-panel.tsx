@@ -13,9 +13,8 @@ const HIGHLIGHTS = [
 	},
 	{
 		icon: KeyRound,
-		title: "Flexible sign-in",
-		description:
-			"Single sign-on or direct credentials — your choice per tenant.",
+		title: "Single sign-on",
+		description: "OIDC-backed access with tenant-specific Keycloak realms.",
 	},
 ] as const;
 

@@ -1,36 +1,22 @@
 import type { NextAuthConfig, Profile } from "next-auth";
 import NextAuth from "next-auth";
 import type { JWT } from "next-auth/jwt";
-import Credentials from "next-auth/providers/credentials";
 import Keycloak from "next-auth/providers/keycloak";
 import {
-	getAuthLoginMode,
 	getDefaultTenantId,
 	getKeycloakClientId,
 	getKeycloakRuntimeConfig,
 	getKeycloakTenantHint,
 	getTenantIdFromIssuer,
-	normalizeTenantId,
 } from "@/lib/auth/keycloak";
-
-type ExtendedUser = {
-	email?: string | null;
-	name?: string | null;
-	username?: string;
-	roles?: string[];
-	tenantId?: string;
-	credentials?: string;
-};
-
-type FineractAuthUser = ExtendedUser & {
-	id: string;
-};
+import {
+	AUTHENTICATED_HOME,
+	hasValidOidcSession,
+	REFRESH_ACCESS_TOKEN_ERROR,
+	SIGN_IN_PATH,
+} from "@/lib/auth/routes";
 
 type JsonRecord = Record<string, unknown>;
-
-const FINERACT_BASE_URL =
-	process.env.FINERACT_BASE_URL ||
-	"https://demo.fineract.dev/fineract-provider/api";
 
 function isRecord(value: unknown): value is JsonRecord {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -144,79 +130,11 @@ function getAccountExpiresAt(account: {
 	return undefined;
 }
 
-function getTenantIdFromCredentials(
-	credentials: Partial<Record<string, unknown>>,
-) {
-	const submittedTenantId = getString(credentials.tenantId);
-	const tenantIdCandidate = submittedTenantId || getDefaultTenantId();
-	return normalizeTenantId(tenantIdCandidate);
-}
-
-/**
- * Authenticate user against Fineract API using POST /v1/authentication.
- */
-async function authenticateWithFineract(
-	username: string,
-	password: string,
-	tenantId: string,
-): Promise<FineractAuthUser | null> {
-	try {
-		const authHeader = Buffer.from(`${username}:${password}`).toString(
-			"base64",
-		);
-
-		const response = await fetch(
-			`${FINERACT_BASE_URL}/v1/authentication?returnClientList=false`,
-			{
-				method: "POST",
-				headers: {
-					Authorization: `Basic ${authHeader}`,
-					"fineract-platform-tenantid": tenantId,
-					"Content-Type": "application/json",
-					Accept: "application/json",
-				},
-				body: JSON.stringify({ username, password }),
-				cache: "no-store",
-			},
-		);
-
-		if (!response.ok) {
-			return null;
-		}
-
-		const userData: unknown = await response.json();
-		if (!isRecord(userData) || userData.authenticated !== true) {
-			return null;
-		}
-
-		const roles = new Set<string>();
-		addRoleValues(roles, userData.roles);
-		const userId = userData.userId;
-		const resolvedUsername = getString(userData.username) ?? username;
-		const officeName = getString(userData.officeName);
-
-		return {
-			id:
-				typeof userId === "number" || typeof userId === "string"
-					? String(userId)
-					: username,
-			username: resolvedUsername,
-			email: `${resolvedUsername}@fineract.local`,
-			name: officeName ?? resolvedUsername,
-			roles: [...roles],
-			tenantId,
-		};
-	} catch (error) {
-		console.error("Fineract authentication error:", error);
-		return null;
-	}
-}
-
 async function refreshKeycloakAccessToken(token: JWT): Promise<JWT> {
 	if (!token.issuer || !token.refreshToken) {
 		return {
 			...token,
-			authError: "RefreshAccessTokenError",
+			authError: REFRESH_ACCESS_TOKEN_ERROR,
 		};
 	}
 
@@ -251,7 +169,7 @@ async function refreshKeycloakAccessToken(token: JWT): Promise<JWT> {
 			});
 			return {
 				...token,
-				authError: "RefreshAccessTokenError",
+				authError: REFRESH_ACCESS_TOKEN_ERROR,
 			};
 		}
 
@@ -260,7 +178,7 @@ async function refreshKeycloakAccessToken(token: JWT): Promise<JWT> {
 		if (!accessToken) {
 			return {
 				...token,
-				authError: "RefreshAccessTokenError",
+				authError: REFRESH_ACCESS_TOKEN_ERROR,
 			};
 		}
 
@@ -279,65 +197,28 @@ async function refreshKeycloakAccessToken(token: JWT): Promise<JWT> {
 		console.error("Keycloak token refresh error:", error);
 		return {
 			...token,
-			authError: "RefreshAccessTokenError",
+			authError: REFRESH_ACCESS_TOKEN_ERROR,
 		};
 	}
-}
-
-function credentialsProvider() {
-	return Credentials({
-		id: "credentials",
-		name: "Username & Password",
-		credentials: {
-			username: { label: "Username", type: "text" },
-			password: { label: "Password", type: "password" },
-			tenantId: { label: "Tenant ID", type: "text" },
-		},
-		async authorize(credentials) {
-			const username = getString(credentials?.username);
-			const password = getString(credentials?.password);
-			const tenantId = getTenantIdFromCredentials(credentials ?? {});
-
-			if (!username || !password || !tenantId) {
-				return null;
-			}
-
-			const user = await authenticateWithFineract(username, password, tenantId);
-			if (!user) {
-				return null;
-			}
-
-			return {
-				...user,
-				credentials: Buffer.from(`${username}:${password}`).toString("base64"),
-			};
-		},
-	});
 }
 
 async function authProviders(
 	request?: Request,
 ): Promise<NextAuthConfig["providers"]> {
-	const mode = getAuthLoginMode();
-	const providers: NextAuthConfig["providers"] = [];
-
-	if (mode !== "keycloak") {
-		providers.push(credentialsProvider());
-	}
-
-	if (mode === "credentials") {
-		return providers;
-	}
-
 	const tenantHint =
 		(await getKeycloakTenantHint(request)) ?? getDefaultTenantId();
 	const keycloakConfig = getKeycloakRuntimeConfig(tenantHint);
 	if (!keycloakConfig) {
-		return providers;
+		return [];
 	}
 
-	providers.push(
+	return [
 		Keycloak({
+			authorization: {
+				params: {
+					scope: "openid email profile offline_access",
+				},
+			},
 			clientId: keycloakConfig.clientId,
 			...(keycloakConfig.clientSecret
 				? { clientSecret: keycloakConfig.clientSecret }
@@ -345,9 +226,7 @@ async function authProviders(
 			issuer: keycloakConfig.issuer,
 			checks: ["pkce", "state"],
 		}),
-	);
-
-	return providers;
+	];
 }
 
 export async function authConfig(request?: Request): Promise<NextAuthConfig> {
@@ -356,13 +235,13 @@ export async function authConfig(request?: Request): Promise<NextAuthConfig> {
 		callbacks: {
 			async signIn({ account, profile }) {
 				if (account?.provider !== "keycloak") {
-					return true;
+					return false;
 				}
 
 				const issuer = getProfileIssuer(profile);
 				return Boolean(issuer && getTenantIdFromIssuer(issuer));
 			},
-			async jwt({ token, account, profile, user }) {
+			async jwt({ token, account, profile }) {
 				if (account?.provider === "keycloak") {
 					const issuer = getProfileIssuer(profile);
 					const tenantId = getTenantIdFromIssuer(issuer);
@@ -381,18 +260,6 @@ export async function authConfig(request?: Request): Promise<NextAuthConfig> {
 					token.authError = undefined;
 
 					return token;
-				}
-
-				if (account?.provider === "credentials" && user) {
-					token.username = (user as ExtendedUser).username;
-					token.email = user.email;
-					token.name = user.name;
-					token.roles = (user as ExtendedUser).roles || [];
-					token.tenantId =
-						(user as ExtendedUser).tenantId || getDefaultTenantId();
-					token.provider = "credentials";
-					token.credentials = (user as ExtendedUser).credentials;
-					token.authError = undefined;
 				}
 
 				if (token.provider !== "keycloak") {
@@ -418,7 +285,6 @@ export async function authConfig(request?: Request): Promise<NextAuthConfig> {
 					session.issuer = token.issuer;
 					session.username = token.username;
 					session.tenantId = token.tenantId;
-					session.credentials = token.credentials;
 					session.authError = token.authError;
 					const existingUser = session.user ?? {};
 					session.user = {
@@ -432,18 +298,18 @@ export async function authConfig(request?: Request): Promise<NextAuthConfig> {
 				return session;
 			},
 			async authorized({ auth, request }) {
-				const isLoggedIn = !!auth?.user;
+				const hasValidSession = hasValidOidcSession(auth);
 				const isOnAdminPage = request.nextUrl.pathname.startsWith("/config");
-				const isOnLoginPage =
-					request.nextUrl.pathname.startsWith("/auth/signin");
+				const isOnLoginPage = request.nextUrl.pathname.startsWith(SIGN_IN_PATH);
 
 				if (isOnAdminPage) {
-					if (!isLoggedIn) return false;
-					return true;
+					return hasValidSession;
 				}
 
-				if (isLoggedIn && isOnLoginPage) {
-					return Response.redirect(new URL("/config", request.nextUrl));
+				if (hasValidSession && isOnLoginPage) {
+					return Response.redirect(
+						new URL(AUTHENTICATED_HOME, request.nextUrl),
+					);
 				}
 
 				return true;
