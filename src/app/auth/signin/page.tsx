@@ -1,16 +1,8 @@
-import {
-	Building2,
-	KeyRound,
-	LineChart,
-	Lock,
-	LogIn,
-	User,
-} from "lucide-react";
+import { Building2, KeyRound, LineChart } from "lucide-react";
 import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
-import { signIn } from "@/auth";
+import { auth, signIn } from "@/auth";
 import { AuthBrandPanel } from "@/components/auth/auth-brand-panel";
-import { AuthMethodTabs } from "@/components/auth/auth-method-tabs";
 import { SignInErrorFeedback } from "@/components/auth/sign-in-error-feedback";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -22,6 +14,12 @@ import {
 	normalizeTenantId,
 	setKeycloakTenantHintCookie,
 } from "@/lib/auth/keycloak";
+import {
+	AUTHENTICATED_HOME,
+	hasValidOidcSession,
+	normalizeCallbackPath,
+	REFRESH_ACCESS_TOKEN_ERROR,
+} from "@/lib/auth/routes";
 
 function getSignInErrorRedirectUrl(error: string, callbackUrl: string) {
 	const params = new URLSearchParams({
@@ -32,6 +30,10 @@ function getSignInErrorRedirectUrl(error: string, callbackUrl: string) {
 	return `/auth/signin?${params.toString()}`;
 }
 
+function getFirstParam(value: string | string[] | undefined) {
+	return Array.isArray(value) ? value[0] : value;
+}
+
 function getSubmittedTenantId(value: FormDataEntryValue | null): string | null {
 	return typeof value === "string" ? normalizeTenantId(value) : null;
 }
@@ -39,13 +41,24 @@ function getSubmittedTenantId(value: FormDataEntryValue | null): string | null {
 export default async function SignInPage({
 	searchParams,
 }: {
-	searchParams: Promise<{ callbackUrl?: string; error?: string }>;
+	searchParams: Promise<{
+		callbackUrl?: string | string[];
+		error?: string | string[];
+	}>;
 }) {
+	const session = await auth();
 	const resolvedSearchParams = await searchParams;
-	const callbackUrl = resolvedSearchParams?.callbackUrl || "/config";
+	const callbackUrl = normalizeCallbackPath(
+		resolvedSearchParams?.callbackUrl,
+		AUTHENTICATED_HOME,
+	);
+	const errorCode = getFirstParam(resolvedSearchParams?.error);
 	const loginSettings = getAuthLoginSettings();
-	const showBothMethods =
-		loginSettings.keycloakEnabled && loginSettings.credentialsEnabled;
+	const hasExpiredSession = session?.authError === REFRESH_ACCESS_TOKEN_ERROR;
+
+	if (hasValidOidcSession(session)) {
+		redirect(callbackUrl);
+	}
 
 	const keycloakForm = (
 		<form
@@ -57,7 +70,7 @@ export default async function SignInPage({
 					redirect(getSignInErrorRedirectUrl("InvalidTenant", callbackUrl));
 				}
 
-				if (!getAuthLoginSettings().keycloakEnabled) {
+				if (!getAuthLoginSettings().keycloakConfigured) {
 					redirect(
 						getSignInErrorRedirectUrl("KeycloakUnavailable", callbackUrl),
 					);
@@ -103,101 +116,6 @@ export default async function SignInPage({
 		</form>
 	);
 
-	const credentialsForm = (
-		<form
-			action={async (formData: FormData) => {
-				"use server";
-
-				const tenantValue = formData.get("tenantId");
-				const tenantId =
-					typeof tenantValue === "string" && tenantValue.trim()
-						? normalizeTenantId(tenantValue)
-						: getAuthLoginSettings().defaultTenantId;
-
-				if (!tenantId) {
-					redirect(getSignInErrorRedirectUrl("InvalidTenant", callbackUrl));
-				}
-
-				const username = formData.get("username");
-				const password = formData.get("password");
-
-				try {
-					await signIn("credentials", {
-						username,
-						password,
-						tenantId,
-						redirectTo: callbackUrl,
-					});
-				} catch (error) {
-					if (error instanceof AuthError) {
-						redirect(getSignInErrorRedirectUrl(error.type, callbackUrl));
-					}
-
-					throw error;
-				}
-			}}
-			className="space-y-6"
-		>
-			<div className="space-y-4">
-				<div className="space-y-2">
-					<Label htmlFor="username" className="text-sm font-medium">
-						Username
-					</Label>
-					<div className="relative">
-						<Input
-							id="username"
-							name="username"
-							type="text"
-							placeholder="Enter your username"
-							required
-							className="pl-8"
-						/>
-						<User className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-					</div>
-				</div>
-
-				<div className="space-y-2">
-					<Label htmlFor="password" className="text-sm font-medium">
-						Password
-					</Label>
-					<div className="relative">
-						<Input
-							id="password"
-							name="password"
-							type="password"
-							placeholder="Enter your password"
-							required
-							className="pl-8"
-						/>
-						<Lock className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-					</div>
-				</div>
-
-				<div className="space-y-2">
-					<Label htmlFor="credentialsTenantId" className="text-sm font-medium">
-						Tenant ID
-					</Label>
-					<div className="relative">
-						<Input
-							id="credentialsTenantId"
-							name="tenantId"
-							type="text"
-							placeholder={loginSettings.defaultTenantId}
-							defaultValue={loginSettings.defaultTenantId}
-							className="pl-8"
-						/>
-						<Building2 className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-					</div>
-				</div>
-			</div>
-
-			<Button type="submit" className="w-full" size="lg">
-				<LogIn className="mr-2 h-4 w-4" />
-				Sign in with credentials
-			</Button>
-		</form>
-	);
-
 	return (
 		<div className="grid min-h-dvh lg:grid-cols-2">
 			<AuthBrandPanel />
@@ -221,34 +139,32 @@ export default async function SignInPage({
 							Welcome back
 						</h1>
 						<p className="text-sm text-muted-foreground">
-							Sign in to your account to continue.
+							Sign in with single sign-on to continue.
 						</p>
 					</div>
 
-					<SignInErrorFeedback errorCode={resolvedSearchParams?.error} />
+					<SignInErrorFeedback errorCode={errorCode} />
 
-					{loginSettings.keycloakRequired &&
-						!loginSettings.keycloakConfigured && (
-							<Alert variant="destructive">
-								<AlertTitle>Single sign-on unavailable</AlertTitle>
-								<AlertDescription>
-									Single sign-on is required but no Keycloak issuer is
-									configured.
-								</AlertDescription>
-							</Alert>
-						)}
-
-					{showBothMethods ? (
-						<AuthMethodTabs
-							ssoForm={keycloakForm}
-							credentialsForm={credentialsForm}
-						/>
-					) : (
-						<>
-							{loginSettings.keycloakEnabled && keycloakForm}
-							{loginSettings.credentialsEnabled && credentialsForm}
-						</>
+					{hasExpiredSession && (
+						<Alert variant="destructive">
+							<AlertTitle>Session expired</AlertTitle>
+							<AlertDescription>
+								Your single sign-on session expired while refreshing access.
+								Sign in again to continue.
+							</AlertDescription>
+						</Alert>
 					)}
+
+					{!loginSettings.keycloakConfigured && (
+						<Alert variant="destructive">
+							<AlertTitle>Single sign-on unavailable</AlertTitle>
+							<AlertDescription>
+								Single sign-on is required but no Keycloak issuer is configured.
+							</AlertDescription>
+						</Alert>
+					)}
+
+					{loginSettings.keycloakConfigured && keycloakForm}
 
 					<div className="text-center text-xs text-muted-foreground">
 						Authorized access only. Activity may be monitored.

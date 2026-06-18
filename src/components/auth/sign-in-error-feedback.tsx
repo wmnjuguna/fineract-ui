@@ -12,11 +12,6 @@ const AUTH_ERROR_MESSAGES: Record<
 	string,
 	{ title: string; description: string }
 > = {
-	CredentialsSignin: {
-		title: "Sign in failed",
-		description:
-			"Invalid username, password, or tenant ID. Confirm your details and try again.",
-	},
 	AccessDenied: {
 		title: "Access denied",
 		description: "You do not have permission to sign in.",

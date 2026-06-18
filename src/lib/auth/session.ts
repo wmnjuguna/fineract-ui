@@ -1,5 +1,6 @@
 import "server-only";
 import { auth } from "@/auth";
+import { hasValidOidcSession } from "@/lib/auth/routes";
 
 export async function getSession() {
 	return await auth();
@@ -13,7 +14,7 @@ export async function getCurrentUser() {
 export async function requireAuth() {
 	const session = await getSession();
 
-	if (!session?.user) {
+	if (!session?.user || !hasValidOidcSession(session)) {
 		throw new Error("Unauthorized");
 	}
 
@@ -23,18 +24,18 @@ export async function requireAuth() {
 export async function getAccessToken() {
 	const session = await getSession();
 
-	if (!session?.accessToken) {
-		throw new Error("No access token available");
+	if (!hasValidOidcSession(session)) {
+		throw new Error("No OIDC access token available");
 	}
 
 	return session.accessToken;
 }
 
-export async function getUserCredentials() {
-	const session = await getSession();
+export async function getUserIdentity() {
+	const session = await requireAuth();
 
 	if (!session?.username) {
-		throw new Error("No user credentials available");
+		throw new Error("No user identity available");
 	}
 
 	return {

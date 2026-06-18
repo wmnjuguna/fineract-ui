@@ -5,8 +5,6 @@ const DEFAULT_TENANT_ID = "default";
 const KEYCLOAK_TENANT_HINT_MAX_AGE_SECONDS = 10 * 60;
 const TENANT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
 
-export type AuthLoginMode = "dual" | "keycloak" | "credentials";
-
 export type KeycloakRuntimeConfig = {
 	clientId: string;
 	clientSecret?: string;
@@ -33,15 +31,6 @@ export function getDefaultTenantId(): string {
 		normalizeTenantId(process.env.AUTH_KEYCLOAK_DEFAULT_TENANT) ??
 		DEFAULT_TENANT_ID
 	);
-}
-
-export function getAuthLoginMode(): AuthLoginMode {
-	const value = process.env.AUTH_LOGIN_MODE?.trim().toLowerCase();
-	if (value === "keycloak" || value === "credentials") {
-		return value;
-	}
-
-	return "dual";
 }
 
 export function getKeycloakClientId(): string {
@@ -128,17 +117,12 @@ export function isKeycloakConfigured(): boolean {
 }
 
 export function getAuthLoginSettings() {
-	const mode = getAuthLoginMode();
 	const keycloakConfigured = isKeycloakConfigured();
 
 	return {
-		mode,
 		defaultTenantId: getDefaultTenantId(),
 		keycloakClientId: getKeycloakClientId(),
-		credentialsEnabled: mode !== "keycloak",
 		keycloakConfigured,
-		keycloakEnabled: mode !== "credentials" && keycloakConfigured,
-		keycloakRequired: mode === "keycloak",
 	};
 }
 
