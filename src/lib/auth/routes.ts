@@ -5,7 +5,6 @@ export const REFRESH_ACCESS_TOKEN_ERROR = "RefreshAccessTokenError";
 const PUBLIC_PATHS = new Set([
 	"/",
 	SIGN_IN_PATH,
-	"/auth/signin/choose",
 	"/auth/error",
 	"/auth/signout",
 ]);
