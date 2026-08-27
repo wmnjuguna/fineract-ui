@@ -16,10 +16,13 @@ const AUTH_ERROR_MESSAGES: Record<
 		title: "Access denied",
 		description: "You do not have permission to sign in.",
 	},
-	InvalidTenant: {
-		title: "Invalid tenant ID",
-		description:
-			"Use a tenant ID with letters, numbers, dots, underscores, or hyphens.",
+	MissingEmail: {
+		title: "Work email required",
+		description: "Enter your work email address to continue.",
+	},
+	SignIn: {
+		title: "Sign-in didn't complete",
+		description: "Check your work email address and try again.",
 	},
 	KeycloakUnavailable: {
 		title: "Keycloak sign-in unavailable",
